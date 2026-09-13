@@ -170,22 +170,6 @@
     border:1px solid var(--line);
     position:relative;
   }
-  #attemptCounter{
-    font-size:11.5px;
-    color:var(--muted);
-    font-family:ui-monospace,"SF Mono",Menlo,"Roboto Mono",monospace;
-    margin-top:4px;
-  }
-  .focus-ring{
-    position:absolute;
-    width:56px;height:56px;
-    border:2px solid var(--laser);
-    border-radius:50%;
-    transform:translate(-50%,-50%);
-    pointer-events:none;
-    opacity:1;
-    transition:opacity .4s ease, transform .3s ease;
-  }
   #scanFeedback{
     margin-top:10px;
     padding:10px 12px;
@@ -301,16 +285,8 @@
   <section id="scan-section">
     <div class="card">
       <button class="btn laser" id="scanToggle" disabled>데이터베이스 로딩 중...</button>
-      <div id="reader" style="display:none;"></div>
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
       <div id="fileScanTarget" style="display:none;"></div>
-      <button class="btn outline" id="captureBtn" style="display:none;margin-top:10px;">스캔하기</button>
-      <div id="zoomWrap" style="display:none;margin-top:10px;">
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px;">
-          <span>확대</span><span id="zoomVal">1x</span>
-        </div>
-        <input type="range" id="zoomSlider" style="width:100%;">
-      </div>
-      <div class="empty" id="tapHint" style="display:none;padding-top:6px;">화면을 탭하면 그 지점에 초점을 맞춥니다</div>
       <div id="scanFeedback"></div>
 
       <table id="scanTable" style="display:none;">
@@ -394,22 +370,14 @@ window.addEventListener('error', function(e){
   let currentLang = 'ko';
   let db = null;            // { keys, records, barcodeKey, productCodeKey, priceKey, nameCandidates }
   let scanList = [];
-  let mediaStream = null;
-  let videoEl = null;
   let fileScanner = null;
-  let scanning = false;
 
   const dbLabelText = document.getElementById('dbLabelText');
   const dbDetail = document.getElementById('dbDetail');
   const dbDot = document.getElementById('dbDot');
   const dbRefresh = document.getElementById('dbRefresh');
   const scanToggle = document.getElementById('scanToggle');
-  const readerEl = document.getElementById('reader');
-  const captureBtn = document.getElementById('captureBtn');
-  const tapHint = document.getElementById('tapHint');
-  const zoomWrap = document.getElementById('zoomWrap');
-  const zoomSlider = document.getElementById('zoomSlider');
-  const zoomVal = document.getElementById('zoomVal');
+  const cameraInput = document.getElementById('cameraInput');
   const feedbackEl = document.getElementById('scanFeedback');
   const scanTable = document.getElementById('scanTable');
   const scanBody = document.getElementById('scanBody');
@@ -438,9 +406,7 @@ window.addEventListener('error', function(e){
     document.getElementById('exportBtn').textContent = t.exportBtn;
     dbRefresh.textContent = t.refresh;
     scanEmpty.textContent = t.scanEmpty;
-    if(scanning) scanToggle.textContent = t.scanStop;
-    else if(!scanToggle.disabled) scanToggle.textContent = t.scanStart;
-    if(!captureBtn.disabled) captureBtn.textContent = t.captureBtn;
+    if(!scanToggle.disabled) scanToggle.textContent = t.captureBtn;
   }
 
   // ---------- 컬럼 자동 인식 ----------
@@ -505,7 +471,7 @@ window.addEventListener('error', function(e){
       dbLabelText.textContent = I18N[currentLang].dbConnected;
       dbDetail.textContent = `${Object.keys(records).length} · "${cols.barcodeKey}"`;
       scanToggle.disabled = false;
-      scanToggle.textContent = I18N[currentLang].scanStart;
+      scanToggle.textContent = I18N[currentLang].captureBtn;
     }catch(err){
       console.error(err);
       showDbError(I18N[currentLang].dbError, I18N[currentLang].dbErrorDetail);
@@ -522,148 +488,21 @@ window.addEventListener('error', function(e){
 
   dbRefresh.addEventListener('click', loadDatabase);
 
-  // ---------- 스캔 ----------
+  // ---------- 스캔: 폰의 기본 카메라 앱을 그대로 열어서 사진 찍기 ----------
   scanToggle.addEventListener('click', () => {
-    if(scanning) stopScan(); else startScan();
+    cameraInput.click();
   });
 
-  async function startScan(){
-    readerEl.style.display = 'block';
-    readerEl.innerHTML = '';
-    videoEl = document.createElement('video');
-    videoEl.setAttribute('playsinline', '');
-    videoEl.setAttribute('autoplay', '');
-    videoEl.muted = true;
-    videoEl.style.width = '100%';
-    videoEl.style.display = 'block';
-    readerEl.appendChild(videoEl);
+  cameraInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    cameraInput.value = ''; // 같은 파일이어도 다음에 다시 트리거되도록 초기화
+    if(!file) return;
 
-    try{
-      mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 3840 },
-          height: { ideal: 2160 },
-          advanced: [{ focusMode: 'continuous' }]
-        }
-      });
-      videoEl.srcObject = mediaStream;
-      await videoEl.play();
-
-      scanning = true;
-      scanToggle.textContent = I18N[currentLang].scanStop;
-      scanToggle.classList.remove('laser');
-      scanToggle.classList.add('outline');
-      tapHint.style.display = 'block';
-      captureBtn.style.display = 'block';
-      captureBtn.textContent = I18N[currentLang].captureBtn;
-      setupZoom();
-    }catch(err){
-      const b = document.getElementById('errBanner');
-      b.style.display = 'block';
-      b.textContent = '카메라 오류: ' + err;
-      readerEl.style.display = 'none';
-    }
-  }
-
-  // ---------- 탭해서 초점 맞추기 (지원되는 안드로이드 크롬에서만 동작) ----------
-  let focusResetTimer = null;
-  readerEl.addEventListener('click', (e) => {
-    if(!scanning || !mediaStream) return;
-    const track = mediaStream.getVideoTracks()[0];
-    if(!track || !track.applyConstraints) return;
-
-    const rect = videoEl.getBoundingClientRect();
-    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
-
-    const ring = document.createElement('div');
-    ring.className = 'focus-ring';
-    ring.style.left = (e.clientX - rect.left) + 'px';
-    ring.style.top = (e.clientY - rect.top) + 'px';
-    readerEl.appendChild(ring);
-    requestAnimationFrame(() => { ring.style.transform = 'translate(-50%,-50%) scale(0.82)'; });
-    setTimeout(() => { ring.style.opacity = '0'; }, 450);
-    setTimeout(() => { ring.remove(); }, 850);
-
-    track.applyConstraints({ advanced: [{ focusMode: 'manual', pointsOfInterest: [{ x, y }] }] }).catch(() => {});
-
-    clearTimeout(focusResetTimer);
-    focusResetTimer = setTimeout(() => {
-      track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
-    }, 3000);
-  });
-
-  function stopScan(){
-    if(mediaStream){
-      mediaStream.getTracks().forEach(t => t.stop());
-    }
-    mediaStream = null;
-    readerEl.style.display = 'none';
-    readerEl.innerHTML = '';
-    tapHint.style.display = 'none';
-    zoomWrap.style.display = 'none';
-    captureBtn.style.display = 'none';
-    scanning = false;
-    scanToggle.textContent = I18N[currentLang].scanStart;
-    scanToggle.classList.add('laser');
-    scanToggle.classList.remove('outline');
-  }
-
-  function setupZoom(){
-    const track = mediaStream ? mediaStream.getVideoTracks()[0] : null;
-    if(!track || !track.getCapabilities) { zoomWrap.style.display = 'none'; return; }
-    const caps = track.getCapabilities();
-    if(!caps.zoom){
-      // 이 기기/브라우저는 소프트웨어로 확대(zoom)를 지원하지 않음 — 슬라이더 숨김
-      zoomWrap.style.display = 'none';
-      return;
-    }
-    zoomWrap.style.display = 'block';
-    zoomSlider.min = caps.zoom.min;
-    zoomSlider.max = caps.zoom.max;
-    zoomSlider.step = caps.zoom.step || 0.1;
-    zoomSlider.value = caps.zoom.min;
-    zoomVal.textContent = Number(caps.zoom.min).toFixed(1) + 'x';
-
-    zoomSlider.oninput = () => {
-      const v = Number(zoomSlider.value);
-      zoomVal.textContent = v.toFixed(1) + 'x';
-      track.applyConstraints({ advanced: [{ zoom: v }] }).catch(() => {});
-    };
-  }
-
-  // ---------- 버튼을 눌렀을 때만 캡처해서 인식 ----------
-  captureBtn.addEventListener('click', captureAndDecode);
-
-  async function captureAndDecode(){
-    if(!mediaStream) return;
     const t = I18N[currentLang];
-    captureBtn.disabled = true;
-    captureBtn.textContent = t.capturing;
+    scanToggle.disabled = true;
+    scanToggle.textContent = t.capturing;
 
     try{
-      const track = mediaStream.getVideoTracks()[0];
-      let blob = null;
-
-      // 1) 가능하면 ImageCapture로 "사진 찍기"처럼 다시 초점을 맞춰 고화질 캡처
-      if('ImageCapture' in window){
-        try{
-          const ic = new ImageCapture(track);
-          blob = await ic.takePhoto();
-        }catch(e){ blob = null; }
-      }
-
-      // 2) 지원 안 되면 현재 화면을 캔버스로 캡처 (대체 수단)
-      if(!blob){
-        const canvas = document.createElement('canvas');
-        canvas.width = videoEl.videoWidth;
-        canvas.height = videoEl.videoHeight;
-        canvas.getContext('2d').drawImage(videoEl, 0, 0);
-        blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
-      }
-
-      const file = new File([blob], 'capture.jpg', { type: blob.type || 'image/jpeg' });
       if(!fileScanner){
         fileScanner = new Html5Qrcode('fileScanTarget', {
           formatsToSupport: [
@@ -683,10 +522,10 @@ window.addEventListener('error', function(e){
       feedbackEl.className = 'miss';
       feedbackEl.textContent = t.noCodeFound;
     }finally{
-      captureBtn.disabled = false;
-      captureBtn.textContent = t.captureBtn;
+      scanToggle.disabled = false;
+      scanToggle.textContent = t.captureBtn;
     }
-  }
+  });
 
   function onScanSuccess(decodedText){
     addScan(decodedText);
