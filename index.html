@@ -170,6 +170,12 @@
     border:1px solid var(--line);
     position:relative;
   }
+  #attemptCounter{
+    font-size:11.5px;
+    color:var(--muted);
+    font-family:ui-monospace,"SF Mono",Menlo,"Roboto Mono",monospace;
+    margin-top:4px;
+  }
   .focus-ring{
     position:absolute;
     width:56px;height:56px;
@@ -296,6 +302,7 @@
     <div class="card">
       <button class="btn laser" id="scanToggle" disabled>데이터베이스 로딩 중...</button>
       <div id="reader" style="display:none;"></div>
+      <div id="attemptCounter" style="display:none;"></div>
       <div class="empty" id="tapHint" style="display:none;padding-top:6px;">화면을 탭하면 그 지점에 초점을 맞춥니다</div>
       <div id="scanFeedback"></div>
 
@@ -380,6 +387,7 @@ window.addEventListener('error', function(e){
   let html5QrCode = null;
   let scanning = false;
   let lastScan = { code:null, time:0 };
+  let attemptCount = 0;
 
   const dbLabelText = document.getElementById('dbLabelText');
   const dbDetail = document.getElementById('dbDetail');
@@ -388,6 +396,7 @@ window.addEventListener('error', function(e){
   const scanToggle = document.getElementById('scanToggle');
   const readerEl = document.getElementById('reader');
   const tapHint = document.getElementById('tapHint');
+  const attemptCounter = document.getElementById('attemptCounter');
   const feedbackEl = document.getElementById('scanFeedback');
   const scanTable = document.getElementById('scanTable');
   const scanBody = document.getElementById('scanBody');
@@ -506,10 +515,15 @@ window.addEventListener('error', function(e){
 
   function startScan(){
     readerEl.style.display = 'block';
+    attemptCounter.style.display = 'block';
+    attemptCounter.textContent = '스캔 시도 중... 0회';
+    attemptCount = 0;
     html5QrCode = new Html5Qrcode('reader');
     const config = {
       fps: 10,
-      qrbox: { width: 280, height: 150 },
+      // qrbox를 지정하지 않으면 화면 일부만 잘라서 보는 게 아니라
+      // 카메라 전체 화면을 다 스캔합니다. 바코드가 박스 밖으로 잘려서
+      // 안 읽히는 문제를 없애기 위한 설정이에요.
       videoConstraints: {
         facingMode: 'environment',
         width: { ideal: 1920 },
@@ -526,7 +540,7 @@ window.addEventListener('error', function(e){
         Html5QrcodeSupportedFormats.QR_CODE
       ]
     };
-    html5QrCode.start({ facingMode:'environment' }, config, onScanSuccess, () => {})
+    html5QrCode.start({ facingMode:'environment' }, config, onScanSuccess, onScanFailure)
       .then(() => {
         scanning = true;
         scanToggle.textContent = I18N[currentLang].scanStop;
@@ -539,6 +553,7 @@ window.addEventListener('error', function(e){
         b.style.display = 'block';
         b.textContent = '카메라 오류: ' + err;
         readerEl.style.display = 'none';
+        attemptCounter.style.display = 'none';
       });
   }
 
@@ -578,6 +593,7 @@ window.addEventListener('error', function(e){
         html5QrCode.clear();
         readerEl.style.display = 'none';
         tapHint.style.display = 'none';
+        attemptCounter.style.display = 'none';
         scanning = false;
         scanToggle.textContent = I18N[currentLang].scanStart;
         scanToggle.classList.add('laser');
@@ -593,7 +609,15 @@ window.addEventListener('error', function(e){
     addScan(decodedText);
   }
 
+  function onScanFailure(){
+    // 프레임마다 호출됨 — "인식은 시도하지만 아직 못 읽음" 상태를 보여주기 위한 카운터
+    attemptCount++;
+    attemptCounter.textContent = '스캔 시도 중... ' + attemptCount + '회 (아직 인식된 바코드 없음)';
+  }
+
   function addScan(code){
+    attemptCount = 0;
+    attemptCounter.textContent = '스캔 시도 중... 0회';
     const record = db.records[code] || null;
     const existing = scanList.find(item => item.barcode === code);
     if(existing){
