@@ -144,6 +144,8 @@
     cursor:pointer;
     white-space:nowrap;
     width:100%;
+    text-decoration:none;
+    box-sizing:border-box;
   }
   .btn.outline{
     background:transparent;
@@ -241,9 +243,15 @@
     border-top:1px solid var(--line);
     padding:12px 18px;
   }
-  footer.bar .btn{
+  footer.bar .bar-inner{
     max-width:520px;
     margin:0 auto;
+    display:flex;
+    gap:8px;
+  }
+  footer.bar .btn{
+    flex:1;
+    width:auto;
   }
 </style>
 </head>
@@ -302,7 +310,10 @@
 </main>
 
 <footer class="bar">
-  <button class="btn outline" id="exportBtn" disabled>엑셀로 내보내기</button>
+  <div class="bar-inner">
+    <button class="btn outline" id="exportBtn" disabled>엑셀로 내보내기</button>
+    <a class="btn outline" id="priceTagBtn" href="https://karrotinab.github.io/POPprinter/" target="_blank" rel="noopener">가격표 프린트 파일 만들기</a>
+  </div>
 </footer>
 
 <script>
