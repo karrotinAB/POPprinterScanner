@@ -496,7 +496,13 @@ window.addEventListener('error', function(e){
     html5QrCode = new Html5Qrcode('reader');
     const config = {
       fps: 10,
-      qrbox: { width: 260, height: 130 },
+      qrbox: { width: 280, height: 150 },
+      videoConstraints: {
+        facingMode: 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        advanced: [{ focusMode: 'continuous' }]
+      },
       formatsToSupport: [
         Html5QrcodeSupportedFormats.EAN_13,
         Html5QrcodeSupportedFormats.EAN_8,
