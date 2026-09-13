@@ -302,7 +302,14 @@
     <div class="card">
       <button class="btn laser" id="scanToggle" disabled>데이터베이스 로딩 중...</button>
       <div id="reader" style="display:none;"></div>
-      <div id="attemptCounter" style="display:none;"></div>
+      <div id="fileScanTarget" style="display:none;"></div>
+      <button class="btn outline" id="captureBtn" style="display:none;margin-top:10px;">스캔하기</button>
+      <div id="zoomWrap" style="display:none;margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px;">
+          <span>확대</span><span id="zoomVal">1x</span>
+        </div>
+        <input type="range" id="zoomSlider" style="width:100%;">
+      </div>
       <div class="empty" id="tapHint" style="display:none;padding-top:6px;">화면을 탭하면 그 지점에 초점을 맞춥니다</div>
       <div id="scanFeedback"></div>
 
@@ -348,7 +355,8 @@ window.addEventListener('error', function(e){
       dbNeeded: '데이터베이스 연결 필요', refresh: '새로고침',
       scanStart: '스캔 시작', scanStop: '스캔 중지', scanEmpty: '아직 스캔한 항목이 없습니다',
       matched: '등록됨', unmatched: '데이터베이스에 없는 바코드',
-      thBarcode: '바코드', thName: '제품명', thQty: '수량', exportBtn: '엑셀로 내보내기', unregistered: '미등록'
+      thBarcode: '바코드', thName: '제품명', thQty: '수량', exportBtn: '엑셀로 내보내기', unregistered: '미등록',
+      captureBtn: '스캔하기', capturing: '인식 중...', noCodeFound: '바코드를 찾지 못했어요. 다시 시도해주세요.'
     },
     en: {
       title: 'Barcode → Excel', subtitle: 'Scan, then export', countLabel: 'scanned',
@@ -359,7 +367,8 @@ window.addEventListener('error', function(e){
       dbNeeded: 'Database connection needed', refresh: 'Refresh',
       scanStart: 'Start scan', scanStop: 'Stop scan', scanEmpty: 'No items scanned yet',
       matched: 'Matched', unmatched: 'Barcode not in database',
-      thBarcode: 'Barcode', thName: 'Product Name', thQty: 'Qty', exportBtn: 'Export to Excel', unregistered: 'Unregistered'
+      thBarcode: 'Barcode', thName: 'Product Name', thQty: 'Qty', exportBtn: 'Export to Excel', unregistered: 'Unregistered',
+      captureBtn: 'Scan', capturing: 'Scanning...', noCodeFound: 'No barcode found. Please try again.'
     },
     es: {
       title: 'Código de barras → Excel', subtitle: 'Escanea y exporta', countLabel: 'escaneados',
@@ -370,7 +379,8 @@ window.addEventListener('error', function(e){
       dbNeeded: 'Se necesita conectar la base de datos', refresh: 'Actualizar',
       scanStart: 'Iniciar escaneo', scanStop: 'Detener escaneo', scanEmpty: 'Aún no se ha escaneado nada',
       matched: 'Encontrado', unmatched: 'Código de barras no está en la base de datos',
-      thBarcode: 'Código de barras', thName: 'Nombre del producto', thQty: 'Cant.', exportBtn: 'Exportar a Excel', unregistered: 'No registrado'
+      thBarcode: 'Código de barras', thName: 'Nombre del producto', thQty: 'Cant.', exportBtn: 'Exportar a Excel', unregistered: 'No registrado',
+      captureBtn: 'Escanear', capturing: 'Escaneando...', noCodeFound: 'No se encontró ningún código. Inténtalo de nuevo.'
     }
   };
 
@@ -384,10 +394,10 @@ window.addEventListener('error', function(e){
   let currentLang = 'ko';
   let db = null;            // { keys, records, barcodeKey, productCodeKey, priceKey, nameCandidates }
   let scanList = [];
-  let html5QrCode = null;
+  let mediaStream = null;
+  let videoEl = null;
+  let fileScanner = null;
   let scanning = false;
-  let lastScan = { code:null, time:0 };
-  let attemptCount = 0;
 
   const dbLabelText = document.getElementById('dbLabelText');
   const dbDetail = document.getElementById('dbDetail');
@@ -395,8 +405,11 @@ window.addEventListener('error', function(e){
   const dbRefresh = document.getElementById('dbRefresh');
   const scanToggle = document.getElementById('scanToggle');
   const readerEl = document.getElementById('reader');
+  const captureBtn = document.getElementById('captureBtn');
   const tapHint = document.getElementById('tapHint');
-  const attemptCounter = document.getElementById('attemptCounter');
+  const zoomWrap = document.getElementById('zoomWrap');
+  const zoomSlider = document.getElementById('zoomSlider');
+  const zoomVal = document.getElementById('zoomVal');
   const feedbackEl = document.getElementById('scanFeedback');
   const scanTable = document.getElementById('scanTable');
   const scanBody = document.getElementById('scanBody');
@@ -427,6 +440,7 @@ window.addEventListener('error', function(e){
     scanEmpty.textContent = t.scanEmpty;
     if(scanning) scanToggle.textContent = t.scanStop;
     else if(!scanToggle.disabled) scanToggle.textContent = t.scanStart;
+    if(!captureBtn.disabled) captureBtn.textContent = t.captureBtn;
   }
 
   // ---------- 컬럼 자동 인식 ----------
@@ -513,57 +527,50 @@ window.addEventListener('error', function(e){
     if(scanning) stopScan(); else startScan();
   });
 
-  function startScan(){
+  async function startScan(){
     readerEl.style.display = 'block';
-    attemptCounter.style.display = 'block';
-    attemptCounter.textContent = '스캔 시도 중... 0회';
-    attemptCount = 0;
-    html5QrCode = new Html5Qrcode('reader');
-    const config = {
-      fps: 10,
-      // qrbox를 지정하지 않으면 화면 일부만 잘라서 보는 게 아니라
-      // 카메라 전체 화면을 다 스캔합니다. 바코드가 박스 밖으로 잘려서
-      // 안 읽히는 문제를 없애기 위한 설정이에요.
-      videoConstraints: {
-        facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        advanced: [{ focusMode: 'continuous' }]
-      },
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.QR_CODE
-      ]
-    };
-    html5QrCode.start({ facingMode:'environment' }, config, onScanSuccess, onScanFailure)
-      .then(() => {
-        scanning = true;
-        scanToggle.textContent = I18N[currentLang].scanStop;
-        scanToggle.classList.remove('laser');
-        scanToggle.classList.add('outline');
-        tapHint.style.display = 'block';
-      })
-      .catch(err => {
-        const b = document.getElementById('errBanner');
-        b.style.display = 'block';
-        b.textContent = '카메라 오류: ' + err;
-        readerEl.style.display = 'none';
-        attemptCounter.style.display = 'none';
+    readerEl.innerHTML = '';
+    videoEl = document.createElement('video');
+    videoEl.setAttribute('playsinline', '');
+    videoEl.setAttribute('autoplay', '');
+    videoEl.muted = true;
+    videoEl.style.width = '100%';
+    videoEl.style.display = 'block';
+    readerEl.appendChild(videoEl);
+
+    try{
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
+          advanced: [{ focusMode: 'continuous' }]
+        }
       });
+      videoEl.srcObject = mediaStream;
+      await videoEl.play();
+
+      scanning = true;
+      scanToggle.textContent = I18N[currentLang].scanStop;
+      scanToggle.classList.remove('laser');
+      scanToggle.classList.add('outline');
+      tapHint.style.display = 'block';
+      captureBtn.style.display = 'block';
+      captureBtn.textContent = I18N[currentLang].captureBtn;
+      setupZoom();
+    }catch(err){
+      const b = document.getElementById('errBanner');
+      b.style.display = 'block';
+      b.textContent = '카메라 오류: ' + err;
+      readerEl.style.display = 'none';
+    }
   }
 
   // ---------- 탭해서 초점 맞추기 (지원되는 안드로이드 크롬에서만 동작) ----------
   let focusResetTimer = null;
   readerEl.addEventListener('click', (e) => {
-    if(!scanning) return;
-    const videoEl = readerEl.querySelector('video');
-    if(!videoEl || !videoEl.srcObject) return;
-    const track = videoEl.srcObject.getVideoTracks()[0];
+    if(!scanning || !mediaStream) return;
+    const track = mediaStream.getVideoTracks()[0];
     if(!track || !track.applyConstraints) return;
 
     const rect = videoEl.getBoundingClientRect();
@@ -588,36 +595,104 @@ window.addEventListener('error', function(e){
   });
 
   function stopScan(){
-    if(html5QrCode){
-      html5QrCode.stop().then(() => {
-        html5QrCode.clear();
-        readerEl.style.display = 'none';
-        tapHint.style.display = 'none';
-        attemptCounter.style.display = 'none';
-        scanning = false;
-        scanToggle.textContent = I18N[currentLang].scanStart;
-        scanToggle.classList.add('laser');
-        scanToggle.classList.remove('outline');
-      });
+    if(mediaStream){
+      mediaStream.getTracks().forEach(t => t.stop());
+    }
+    mediaStream = null;
+    readerEl.style.display = 'none';
+    readerEl.innerHTML = '';
+    tapHint.style.display = 'none';
+    zoomWrap.style.display = 'none';
+    captureBtn.style.display = 'none';
+    scanning = false;
+    scanToggle.textContent = I18N[currentLang].scanStart;
+    scanToggle.classList.add('laser');
+    scanToggle.classList.remove('outline');
+  }
+
+  function setupZoom(){
+    const track = mediaStream ? mediaStream.getVideoTracks()[0] : null;
+    if(!track || !track.getCapabilities) { zoomWrap.style.display = 'none'; return; }
+    const caps = track.getCapabilities();
+    if(!caps.zoom){
+      // 이 기기/브라우저는 소프트웨어로 확대(zoom)를 지원하지 않음 — 슬라이더 숨김
+      zoomWrap.style.display = 'none';
+      return;
+    }
+    zoomWrap.style.display = 'block';
+    zoomSlider.min = caps.zoom.min;
+    zoomSlider.max = caps.zoom.max;
+    zoomSlider.step = caps.zoom.step || 0.1;
+    zoomSlider.value = caps.zoom.min;
+    zoomVal.textContent = Number(caps.zoom.min).toFixed(1) + 'x';
+
+    zoomSlider.oninput = () => {
+      const v = Number(zoomSlider.value);
+      zoomVal.textContent = v.toFixed(1) + 'x';
+      track.applyConstraints({ advanced: [{ zoom: v }] }).catch(() => {});
+    };
+  }
+
+  // ---------- 버튼을 눌렀을 때만 캡처해서 인식 ----------
+  captureBtn.addEventListener('click', captureAndDecode);
+
+  async function captureAndDecode(){
+    if(!mediaStream) return;
+    const t = I18N[currentLang];
+    captureBtn.disabled = true;
+    captureBtn.textContent = t.capturing;
+
+    try{
+      const track = mediaStream.getVideoTracks()[0];
+      let blob = null;
+
+      // 1) 가능하면 ImageCapture로 "사진 찍기"처럼 다시 초점을 맞춰 고화질 캡처
+      if('ImageCapture' in window){
+        try{
+          const ic = new ImageCapture(track);
+          blob = await ic.takePhoto();
+        }catch(e){ blob = null; }
+      }
+
+      // 2) 지원 안 되면 현재 화면을 캔버스로 캡처 (대체 수단)
+      if(!blob){
+        const canvas = document.createElement('canvas');
+        canvas.width = videoEl.videoWidth;
+        canvas.height = videoEl.videoHeight;
+        canvas.getContext('2d').drawImage(videoEl, 0, 0);
+        blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
+      }
+
+      const file = new File([blob], 'capture.jpg', { type: blob.type || 'image/jpeg' });
+      if(!fileScanner){
+        fileScanner = new Html5Qrcode('fileScanTarget', {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.QR_CODE
+          ]
+        });
+      }
+      const decodedText = await fileScanner.scanFile(file, false);
+      onScanSuccess(decodedText);
+    }catch(err){
+      feedbackEl.className = 'miss';
+      feedbackEl.textContent = t.noCodeFound;
+    }finally{
+      captureBtn.disabled = false;
+      captureBtn.textContent = t.captureBtn;
     }
   }
 
   function onScanSuccess(decodedText){
-    const now = Date.now();
-    if(decodedText === lastScan.code && now - lastScan.time < 1500) return;
-    lastScan = { code: decodedText, time: now };
     addScan(decodedText);
   }
 
-  function onScanFailure(){
-    // 프레임마다 호출됨 — "인식은 시도하지만 아직 못 읽음" 상태를 보여주기 위한 카운터
-    attemptCount++;
-    attemptCounter.textContent = '스캔 시도 중... ' + attemptCount + '회 (아직 인식된 바코드 없음)';
-  }
-
   function addScan(code){
-    attemptCount = 0;
-    attemptCounter.textContent = '스캔 시도 중... 0회';
     const record = db.records[code] || null;
     const existing = scanList.find(item => item.barcode === code);
     if(existing){
