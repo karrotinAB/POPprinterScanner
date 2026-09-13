@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>바코드 → 엑셀</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.0.11/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.4/html5-qrcode.min.js"></script>
 <style>
   :root{
     --ink:#161613;
@@ -249,6 +249,7 @@
 <body>
 
 <div class="stripes"></div>
+<div id="errBanner" style="display:none;background:#E23B4E;color:#fff;padding:10px 16px;font-size:12.5px;word-break:break-all;"></div>
 <header>
   <div class="titles">
     <h1 id="txtTitle">바코드 → 엑셀</h1>
@@ -303,6 +304,14 @@
 </footer>
 
 <script>
+window.addEventListener('error', function(e){
+  var b = document.getElementById('errBanner');
+  if(b){
+    b.style.display = 'block';
+    b.textContent = '오류: ' + (e.message || e) + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '');
+  }
+});
+
 (function(){
   // ====== 여기만 채우면 됩니다 ======
   // 구글 시트: 파일 > 공유 > 웹에 게시 > 쉼표로 구분된 값(.csv) 선택 후 나오는 링크를 붙여넣으세요
@@ -506,7 +515,9 @@
         scanToggle.classList.add('outline');
       })
       .catch(err => {
-        alert('Camera error: ' + err);
+        const b = document.getElementById('errBanner');
+        b.style.display = 'block';
+        b.textContent = '카메라 오류: ' + err;
         readerEl.style.display = 'none';
       });
   }
