@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>바코드 → 엑셀</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.0.11/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --ink:#161613;
+    --paper:#FAF9F5;
+    --line:#DEDBD1;
+    --laser:#E23B4E;
+    --laser-dim:#F6D9DC;
+    --ok:#2E8B57;
+    --ok-dim:#DCEFE3;
+    --muted:#84817A;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    line-height:1.45;
+    padding-bottom:84px;
+  }
+  .stripes{
+    height:10px;
+    width:100%;
+    background-image:repeating-linear-gradient(90deg,var(--ink) 0 2px,transparent 2px 5px,var(--ink) 5px 6px,transparent 6px 11px,var(--ink) 11px 14px,transparent 14px 19px);
+    opacity:.85;
+  }
+  header{
+    padding:18px 18px 14px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:14px;
+  }
+  header .titles h1{
+    font-size:21px;
+    margin:0 0 4px;
+    letter-spacing:-.01em;
+  }
+  header .titles .sub{
+    color:var(--muted);
+    font-size:13px;
+    margin:0;
+  }
+  .count-badge{
+    flex:none;
+    text-align:center;
+    border:1px solid var(--ink);
+    border-radius:10px;
+    padding:8px 14px;
+    min-width:64px;
+  }
+  .count-badge .n{
+    font-size:22px;
+    font-weight:700;
+    line-height:1;
+    font-family:ui-monospace,"SF Mono",Menlo,"Roboto Mono",monospace;
+  }
+  .count-badge .l{
+    font-size:11px;
+    color:var(--muted);
+    margin-top:2px;
+  }
+  .lang-bar{
+    display:flex;
+    gap:6px;
+    padding:10px 18px;
+    border-bottom:1px solid var(--line);
+    max-width:520px;
+    margin:0 auto;
+  }
+  .lang-btn{
+    flex:1;
+    border:1px solid var(--line);
+    background:#fff;
+    color:var(--muted);
+    padding:7px 0;
+    border-radius:8px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .lang-btn.active{
+    border-color:var(--ink);
+    color:var(--ink);
+    background:#F0EFEA;
+  }
+  main{
+    padding:16px 18px 8px;
+    max-width:520px;
+    margin:0 auto;
+  }
+  section{
+    margin-bottom:22px;
+  }
+  .card{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px;
+    background:#fff;
+  }
+  .db-status{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    font-size:13.5px;
+  }
+  .db-status .label{
+    font-weight:600;
+  }
+  .db-status .detail{
+    color:var(--muted);
+    font-size:12.5px;
+    margin-top:2px;
+  }
+  .dot{
+    width:8px;height:8px;border-radius:50%;
+    display:inline-block;margin-right:6px;
+    background:var(--muted);
+  }
+  .dot.ok{background:var(--ok);}
+  .dot.err{background:var(--laser);}
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    border:1px solid var(--ink);
+    background:var(--ink);
+    color:var(--paper);
+    padding:10px 16px;
+    border-radius:8px;
+    font-size:14.5px;
+    font-weight:600;
+    cursor:pointer;
+    white-space:nowrap;
+    width:100%;
+  }
+  .btn.outline{
+    background:transparent;
+    color:var(--ink);
+  }
+  .btn.laser{
+    background:var(--laser);
+    border-color:var(--laser);
+  }
+  .btn:disabled{
+    opacity:.4;
+    cursor:not-allowed;
+  }
+  .btn.small{
+    padding:6px 10px;
+    font-size:13px;
+    width:auto;
+  }
+  #reader{
+    width:100%;
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:12px;
+    border:1px solid var(--line);
+  }
+  #scanFeedback{
+    margin-top:10px;
+    padding:10px 12px;
+    border-radius:8px;
+    font-size:14px;
+    display:none;
+  }
+  #scanFeedback.ok{
+    display:block;
+    background:var(--ok-dim);
+    color:var(--ok);
+  }
+  #scanFeedback.miss{
+    display:block;
+    background:var(--laser-dim);
+    color:var(--laser);
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:14px;
+    font-size:13.5px;
+  }
+  th,td{
+    text-align:left;
+    padding:8px 6px;
+    border-bottom:1px solid var(--line);
+  }
+  th{
+    color:var(--muted);
+    font-weight:600;
+    font-size:12px;
+  }
+  td.code{
+    font-family:ui-monospace,"SF Mono",Menlo,"Roboto Mono",monospace;
+    font-size:12.5px;
+  }
+  .qty{
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .qty button{
+    width:24px;height:24px;
+    border:1px solid var(--line);
+    background:#fff;
+    border-radius:6px;
+    font-size:14px;
+    line-height:1;
+    cursor:pointer;
+  }
+  .rm{
+    color:var(--muted);
+    cursor:pointer;
+    font-size:16px;
+    background:none;
+    border:none;
+  }
+  .empty{
+    color:var(--muted);
+    font-size:13.5px;
+    padding:16px 0;
+    text-align:center;
+  }
+  footer.bar{
+    position:fixed;
+    left:0;right:0;bottom:0;
+    background:#fff;
+    border-top:1px solid var(--line);
+    padding:12px 18px;
+  }
+  footer.bar .btn{
+    max-width:520px;
+    margin:0 auto;
+  }
+</style>
+</head>
+<body>
+
+<div class="stripes"></div>
+<header>
+  <div class="titles">
+    <h1 id="txtTitle">바코드 → 엑셀</h1>
+    <p class="sub" id="txtSubtitle">스캔하고, 엑셀로 뽑기</p>
+  </div>
+  <div class="count-badge">
+    <div class="n" id="topCount">0</div>
+    <div class="l" id="txtCountLabel">스캔됨</div>
+  </div>
+</header>
+
+<div class="lang-bar">
+  <button class="lang-btn active" data-lang="ko">한국어</button>
+  <button class="lang-btn" data-lang="en">English</button>
+  <button class="lang-btn" data-lang="es">Español</button>
+</div>
+
+<main>
+
+  <section id="db-section">
+    <div class="card">
+      <div class="db-status">
+        <div>
+          <div class="label" id="dbLabel"><span class="dot" id="dbDot"></span><span id="dbLabelText">데이터베이스 불러오는 중...</span></div>
+          <div class="detail" id="dbDetail">구글 시트에서 제품 정보를 가져오고 있어요</div>
+        </div>
+        <button class="btn small outline" id="dbRefresh">새로고침</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="scan-section">
+    <div class="card">
+      <button class="btn laser" id="scanToggle" disabled>데이터베이스 로딩 중...</button>
+      <div id="reader" style="display:none;"></div>
+      <div id="scanFeedback"></div>
+
+      <table id="scanTable" style="display:none;">
+        <thead>
+          <tr><th id="thBarcode">바코드</th><th id="thName">제품명</th><th id="thQty">수량</th><th></th></tr>
+        </thead>
+        <tbody id="scanBody"></tbody>
+      </table>
+      <div class="empty" id="scanEmpty">아직 스캔한 항목이 없습니다</div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="bar">
+  <button class="btn outline" id="exportBtn" disabled>엑셀로 내보내기</button>
+</footer>
+
+<script>
+(function(){
+  // ====== 여기만 채우면 됩니다 ======
+  // 구글 시트: 파일 > 공유 > 웹에 게시 > 쉼표로 구분된 값(.csv) 선택 후 나오는 링크를 붙여넣으세요
+  const SHEET_CSV_URL = "여기에_구글시트_공개_CSV_링크를_붙여넣으세요";
+  // ===================================
+
+  // ---------- 다국어 텍스트 ----------
+  const I18N = {
+    ko: {
+      title: '바코드 → 엑셀', subtitle: '스캔하고, 엑셀로 뽑기', countLabel: '스캔됨',
+      dbLoading: '데이터베이스 불러오는 중...', dbLoadingDetail: '구글 시트에서 제품 정보를 가져오고 있어요',
+      dbConnected: '데이터베이스 연결됨', dbLinkMissing: '구글 시트 링크가 설정되지 않았습니다',
+      dbLinkMissingDetail: '코드 상단의 SHEET_CSV_URL 값을 채워주세요',
+      dbError: '데이터베이스를 불러오지 못했습니다', dbErrorDetail: '시트가 "웹에 게시"되어 있는지, 링크가 CSV 형식인지 확인해주세요',
+      dbNeeded: '데이터베이스 연결 필요', refresh: '새로고침',
+      scanStart: '스캔 시작', scanStop: '스캔 중지', scanEmpty: '아직 스캔한 항목이 없습니다',
+      matched: '등록됨', unmatched: '데이터베이스에 없는 바코드',
+      thBarcode: '바코드', thName: '제품명', thQty: '수량', exportBtn: '엑셀로 내보내기', unregistered: '미등록'
+    },
+    en: {
+      title: 'Barcode → Excel', subtitle: 'Scan, then export', countLabel: 'scanned',
+      dbLoading: 'Loading database...', dbLoadingDetail: 'Fetching product data from Google Sheets',
+      dbConnected: 'Database connected', dbLinkMissing: 'Google Sheet link not set',
+      dbLinkMissingDetail: 'Fill in SHEET_CSV_URL near the top of the code',
+      dbError: 'Could not load database', dbErrorDetail: 'Check that the sheet is "Published to web" as CSV',
+      dbNeeded: 'Database connection needed', refresh: 'Refresh',
+      scanStart: 'Start scan', scanStop: 'Stop scan', scanEmpty: 'No items scanned yet',
+      matched: 'Matched', unmatched: 'Barcode not in database',
+      thBarcode: 'Barcode', thName: 'Product Name', thQty: 'Qty', exportBtn: 'Export to Excel', unregistered: 'Unregistered'
+    },
+    es: {
+      title: 'Código de barras → Excel', subtitle: 'Escanea y exporta', countLabel: 'escaneados',
+      dbLoading: 'Cargando base de datos...', dbLoadingDetail: 'Obteniendo datos de productos desde Google Sheets',
+      dbConnected: 'Base de datos conectada', dbLinkMissing: 'Enlace de Google Sheets no configurado',
+      dbLinkMissingDetail: 'Completa SHEET_CSV_URL en la parte superior del código',
+      dbError: 'No se pudo cargar la base de datos', dbErrorDetail: 'Verifica que la hoja esté "Publicada en la web" como CSV',
+      dbNeeded: 'Se necesita conectar la base de datos', refresh: 'Actualizar',
+      scanStart: 'Iniciar escaneo', scanStop: 'Detener escaneo', scanEmpty: 'Aún no se ha escaneado nada',
+      matched: 'Encontrado', unmatched: 'Código de barras no está en la base de datos',
+      thBarcode: 'Código de barras', thName: 'Nombre del producto', thQty: 'Cant.', exportBtn: 'Exportar a Excel', unregistered: 'No registrado'
+    }
+  };
+
+  // 내보내기 엑셀의 컬럼 헤더 (요청하신 순서: 제품코드 / 제품명 / 가격 / 바코드)
+  const EXPORT_HEADERS = {
+    ko: ['제품 코드', '제품명', '가격 (한국 소비자가)', '바코드'],
+    en: ['Product Code', 'Product Name', 'Price (Korean Retail Price)', 'Barcode'],
+    es: ['Código de producto', 'Nombre del producto', 'Precio (Precio minorista en Corea)', 'Código de barras']
+  };
+
+  let currentLang = 'ko';
+  let db = null;            // { keys, records, barcodeKey, productCodeKey, priceKey, nameCandidates }
+  let scanList = [];
+  let html5QrCode = null;
+  let scanning = false;
+  let lastScan = { code:null, time:0 };
+
+  const dbLabelText = document.getElementById('dbLabelText');
+  const dbDetail = document.getElementById('dbDetail');
+  const dbDot = document.getElementById('dbDot');
+  const dbRefresh = document.getElementById('dbRefresh');
+  const scanToggle = document.getElementById('scanToggle');
+  const readerEl = document.getElementById('reader');
+  const feedbackEl = document.getElementById('scanFeedback');
+  const scanTable = document.getElementById('scanTable');
+  const scanBody = document.getElementById('scanBody');
+  const scanEmpty = document.getElementById('scanEmpty');
+  const topCount = document.getElementById('topCount');
+  const exportBtn = document.getElementById('exportBtn');
+
+  // ---------- 언어 전환 ----------
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentLang = btn.dataset.lang;
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b === btn));
+      applyLanguage();
+      renderScanList();
+    });
+  });
+
+  function applyLanguage(){
+    const t = I18N[currentLang];
+    document.getElementById('txtTitle').textContent = t.title;
+    document.getElementById('txtSubtitle').textContent = t.subtitle;
+    document.getElementById('txtCountLabel').textContent = t.countLabel;
+    document.getElementById('thBarcode').textContent = t.thBarcode;
+    document.getElementById('thName').textContent = t.thName;
+    document.getElementById('thQty').textContent = t.thQty;
+    document.getElementById('exportBtn').textContent = t.exportBtn;
+    dbRefresh.textContent = t.refresh;
+    scanEmpty.textContent = t.scanEmpty;
+    if(scanning) scanToggle.textContent = t.scanStop;
+    else if(!scanToggle.disabled) scanToggle.textContent = t.scanStart;
+  }
+
+  // ---------- 컬럼 자동 인식 ----------
+  function detectColumns(keys){
+    const barcodeKey = keys.find(k => /바코드/i.test(k) || /\bbar\s*code\b/i.test(k));
+    const productCodeKey = keys.find(k => k !== barcodeKey && (/코드/.test(k) || /\bcode\b/i.test(k) || /\bsku\b/i.test(k) || /품번/.test(k)));
+    const priceKey = keys.find(k => /가격|단가/.test(k) || /\bprice\b/i.test(k));
+    const nameCandidates = keys.filter(k => /제품명|상품명|품명/.test(k) || /\bname\b/i.test(k));
+    return { barcodeKey, productCodeKey, priceKey, nameCandidates };
+  }
+
+  function pickNameKey(nameCandidates, lang){
+    const hints = {
+      ko: [/한국|국문|\bkr\b|korean/i],
+      en: [/영어|영문|\beng?\b|english/i],
+      es: [/스페인|서반아|\besp?\b|spanish/i]
+    }[lang];
+    let match = nameCandidates.find(k => hints.some(r => r.test(k)));
+    if(match) return match;
+    if(nameCandidates.length === 1) return nameCandidates[0];
+    const langMarkers = /영어|영문|eng|english|스페인|서반아|esp|spanish|한국|국문|kr|korean/i;
+    const plain = nameCandidates.find(k => !langMarkers.test(k));
+    return plain || nameCandidates[0];
+  }
+
+  // ---------- 구글 시트에서 데이터베이스 불러오기 ----------
+  async function loadDatabase(){
+    const t = I18N[currentLang];
+    dbDot.className = 'dot';
+    dbLabelText.textContent = t.dbLoading;
+    dbDetail.textContent = t.dbLoadingDetail;
+    scanToggle.disabled = true;
+    scanToggle.textContent = t.dbLoading;
+
+    if(!SHEET_CSV_URL || SHEET_CSV_URL.includes('여기에')){
+      showDbError(t.dbLinkMissing, t.dbLinkMissingDetail);
+      return;
+    }
+
+    try{
+      const res = await fetch(SHEET_CSV_URL);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      const wb = XLSX.read(text, { type:'string' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval:'' });
+      if(!rows.length) throw new Error('empty');
+
+      const keys = Object.keys(rows[0]);
+      const cols = detectColumns(keys);
+      if(!cols.barcodeKey) throw new Error('no barcode column');
+
+      const records = {};
+      rows.forEach(r => {
+        const code = String(r[cols.barcodeKey]).trim();
+        if(code) records[code] = r;
+      });
+
+      db = Object.assign({ keys, records }, cols);
+
+      dbDot.className = 'dot ok';
+      dbLabelText.textContent = I18N[currentLang].dbConnected;
+      dbDetail.textContent = `${Object.keys(records).length} · "${cols.barcodeKey}"`;
+      scanToggle.disabled = false;
+      scanToggle.textContent = I18N[currentLang].scanStart;
+    }catch(err){
+      console.error(err);
+      showDbError(I18N[currentLang].dbError, I18N[currentLang].dbErrorDetail);
+    }
+  }
+
+  function showDbError(label, detail){
+    dbDot.className = 'dot err';
+    dbLabelText.textContent = label;
+    dbDetail.textContent = detail;
+    scanToggle.disabled = true;
+    scanToggle.textContent = I18N[currentLang].dbNeeded;
+  }
+
+  dbRefresh.addEventListener('click', loadDatabase);
+
+  // ---------- 스캔 ----------
+  scanToggle.addEventListener('click', () => {
+    if(scanning) stopScan(); else startScan();
+  });
+
+  function startScan(){
+    readerEl.style.display = 'block';
+    html5QrCode = new Html5Qrcode('reader');
+    const config = {
+      fps: 10,
+      qrbox: { width: 260, height: 130 },
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.QR_CODE
+      ]
+    };
+    html5QrCode.start({ facingMode:'environment' }, config, onScanSuccess, () => {})
+      .then(() => {
+        scanning = true;
+        scanToggle.textContent = I18N[currentLang].scanStop;
+        scanToggle.classList.remove('laser');
+        scanToggle.classList.add('outline');
+      })
+      .catch(err => {
+        alert('Camera error: ' + err);
+        readerEl.style.display = 'none';
+      });
+  }
+
+  function stopScan(){
+    if(html5QrCode){
+      html5QrCode.stop().then(() => {
+        html5QrCode.clear();
+        readerEl.style.display = 'none';
+        scanning = false;
+        scanToggle.textContent = I18N[currentLang].scanStart;
+        scanToggle.classList.add('laser');
+        scanToggle.classList.remove('outline');
+      });
+    }
+  }
+
+  function onScanSuccess(decodedText){
+    const now = Date.now();
+    if(decodedText === lastScan.code && now - lastScan.time < 1500) return;
+    lastScan = { code: decodedText, time: now };
+    addScan(decodedText);
+  }
+
+  function addScan(code){
+    const record = db.records[code] || null;
+    const existing = scanList.find(item => item.barcode === code);
+    if(existing){
+      existing.qty += 1;
+    }else{
+      scanList.push({ barcode: code, record, qty: 1 });
+    }
+
+    const t = I18N[currentLang];
+    const nameKey = pickNameKey(db.nameCandidates, currentLang);
+    feedbackEl.className = record ? 'ok' : 'miss';
+    feedbackEl.textContent = record
+      ? `${t.matched}: ${nameKey ? record[nameKey] : code}`
+      : `${t.unmatched}: ${code}`;
+
+    renderScanList();
+  }
+
+  function renderScanList(){
+    const t = I18N[currentLang];
+    if(!scanList.length){
+      scanTable.style.display = 'none';
+      scanEmpty.style.display = 'block';
+    }else{
+      scanTable.style.display = 'table';
+      scanEmpty.style.display = 'none';
+      scanBody.innerHTML = '';
+      const nameKey = db ? pickNameKey(db.nameCandidates, currentLang) : null;
+      scanList.forEach((item, idx) => {
+        const name = item.record ? (nameKey ? item.record[nameKey] : '-') : t.unregistered;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="code">${item.barcode}</td>
+          <td>${name}</td>
+          <td>
+            <div class="qty">
+              <button data-act="minus" data-idx="${idx}">−</button>
+              <span>${item.qty}</span>
+              <button data-act="plus" data-idx="${idx}">+</button>
+            </div>
+          </td>
+          <td><button class="rm" data-act="remove" data-idx="${idx}">×</button></td>
+        `;
+        scanBody.appendChild(tr);
+      });
+    }
+    const total = scanList.reduce((sum, i) => sum + i.qty, 0);
+    topCount.textContent = total;
+    exportBtn.disabled = scanList.length === 0;
+  }
+
+  scanBody.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    const idx = Number(btn.dataset.idx);
+    const act = btn.dataset.act;
+    if(act === 'plus') scanList[idx].qty += 1;
+    if(act === 'minus') scanList[idx].qty = Math.max(1, scanList[idx].qty - 1);
+    if(act === 'remove') scanList.splice(idx, 1);
+    renderScanList();
+  });
+
+  // ---------- 엑셀 내보내기 ----------
+  // 출력 컬럼 순서: 제품 코드 / 제품명 / 가격(한국 소비자가) / 바코드
+  exportBtn.addEventListener('click', () => {
+    const headers = EXPORT_HEADERS[currentLang];
+    const nameKey = pickNameKey(db.nameCandidates, currentLang);
+
+    const data = scanList.map(item => {
+      const r = item.record || {};
+      const row = {};
+      row[headers[0]] = db.productCodeKey ? r[db.productCodeKey] : '';
+      row[headers[1]] = nameKey ? r[nameKey] : '';
+      row[headers[2]] = db.priceKey ? r[db.priceKey] : '';
+      row[headers[3]] = item.barcode;
+      return row;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data, { header: headers });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Scan');
+    const today = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `scan_${today}.xlsx`);
+  });
+
+  // ---------- 시작 ----------
+  applyLanguage();
+  loadDatabase();
+
+})();
+</script>
+</body>
+</html>
