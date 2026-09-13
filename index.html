@@ -596,6 +596,12 @@ window.addEventListener('error', function(e){
 
   // ---------- 엑셀 내보내기 ----------
   // 출력 컬럼 순서: 제품 코드 / 제품명 / 가격(한국 소비자가) / 바코드
+  function padProductCode(value){
+    const s = String(value == null ? '' : value).trim();
+    if(!s) return '';
+    return s.padStart(8, '0');
+  }
+
   exportBtn.addEventListener('click', () => {
     const headers = EXPORT_HEADERS[currentLang];
     const nameKey = pickNameKey(db.nameCandidates, currentLang);
@@ -603,7 +609,7 @@ window.addEventListener('error', function(e){
     const data = scanList.map(item => {
       const r = item.record || {};
       const row = {};
-      row[headers[0]] = db.productCodeKey ? r[db.productCodeKey] : '';
+      row[headers[0]] = db.productCodeKey ? padProductCode(r[db.productCodeKey]) : '';
       row[headers[1]] = nameKey ? r[nameKey] : '';
       row[headers[2]] = db.priceKey ? r[db.priceKey] : '';
       row[headers[3]] = item.barcode;
