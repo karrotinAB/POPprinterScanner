@@ -297,7 +297,11 @@
       <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
       <div id="fileScanTarget" style="position:absolute;left:-9999px;top:0;width:300px;height:300px;overflow:hidden;"></div>
       <div id="scanFeedback"></div>
-      <div id="debugInfo" style="display:none;margin-top:8px;padding:10px 12px;background:#F0EFEA;border-radius:8px;font-size:11.5px;font-family:ui-monospace,'SF Mono',Menlo,'Roboto Mono',monospace;white-space:pre-wrap;word-break:break-all;color:var(--muted);"></div>
+
+      <div id="manualRow" style="display:flex;gap:6px;margin-top:10px;">
+        <input type="text" id="manualInput" inputmode="numeric" placeholder="인식 안 되면 숫자 직접 입력" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:14px;font-family:ui-monospace,'SF Mono',Menlo,'Roboto Mono',monospace;">
+        <button class="btn outline small" id="manualAddBtn" style="width:auto;">추가</button>
+      </div>
 
       <table id="scanTable" style="display:none;">
         <thead>
@@ -345,7 +349,8 @@ window.addEventListener('error', function(e){
       scanStart: '스캔 시작', scanStop: '스캔 중지', scanEmpty: '아직 스캔한 항목이 없습니다',
       matched: '등록됨', unmatched: '데이터베이스에 없는 바코드',
       thBarcode: '바코드', thName: '제품명', thQty: '수량', exportBtn: '엑셀로 내보내기', unregistered: '미등록',
-      captureBtn: '스캔하기', capturing: '인식 중...', noCodeFound: '바코드를 찾지 못했어요. 다시 시도해주세요.'
+      captureBtn: '스캔하기', capturing: '인식 중...', noCodeFound: '바코드를 찾지 못했어요. 다시 시도해주세요.',
+      priceTagBtn: '가격표 프린트 파일 만들기'
     },
     en: {
       title: 'Barcode → Excel', subtitle: 'Scan, then export', countLabel: 'scanned',
@@ -357,7 +362,8 @@ window.addEventListener('error', function(e){
       scanStart: 'Start scan', scanStop: 'Stop scan', scanEmpty: 'No items scanned yet',
       matched: 'Matched', unmatched: 'Barcode not in database',
       thBarcode: 'Barcode', thName: 'Product Name', thQty: 'Qty', exportBtn: 'Export to Excel', unregistered: 'Unregistered',
-      captureBtn: 'Scan', capturing: 'Scanning...', noCodeFound: 'No barcode found. Please try again.'
+      captureBtn: 'Scan', capturing: 'Scanning...', noCodeFound: 'No barcode found. Please try again.',
+      priceTagBtn: 'Create Price Tag Print File'
     },
     es: {
       title: 'Código de barras → Excel', subtitle: 'Escanea y exporta', countLabel: 'escaneados',
@@ -369,7 +375,8 @@ window.addEventListener('error', function(e){
       scanStart: 'Iniciar escaneo', scanStop: 'Detener escaneo', scanEmpty: 'Aún no se ha escaneado nada',
       matched: 'Encontrado', unmatched: 'Código de barras no está en la base de datos',
       thBarcode: 'Código de barras', thName: 'Nombre del producto', thQty: 'Cant.', exportBtn: 'Exportar a Excel', unregistered: 'No registrado',
-      captureBtn: 'Escanear', capturing: 'Escaneando...', noCodeFound: 'No se encontró ningún código. Inténtalo de nuevo.'
+      captureBtn: 'Escanear', capturing: 'Escaneando...', noCodeFound: 'No se encontró ningún código. Inténtalo de nuevo.',
+      priceTagBtn: 'Crear archivo de impresión de etiquetas'
     }
   };
 
@@ -417,6 +424,7 @@ window.addEventListener('error', function(e){
     document.getElementById('thName').textContent = t.thName;
     document.getElementById('thQty').textContent = t.thQty;
     document.getElementById('exportBtn').textContent = t.exportBtn;
+    document.getElementById('priceTagBtn').textContent = t.priceTagBtn;
     dbRefresh.textContent = t.refresh;
     scanEmpty.textContent = t.scanEmpty;
     if(!scanToggle.disabled) scanToggle.textContent = t.captureBtn;
@@ -514,9 +522,6 @@ window.addEventListener('error', function(e){
     const t = I18N[currentLang];
     scanToggle.disabled = true;
     scanToggle.textContent = t.capturing;
-    const debugEl = document.getElementById('debugInfo');
-    debugEl.style.display = 'block';
-    debugEl.textContent = '파일: ' + file.type + ', ' + Math.round(file.size/1024) + 'KB\n분석 중...';
 
     try{
       if(!fileScanner){
@@ -532,17 +537,27 @@ window.addEventListener('error', function(e){
           ]
         });
       }
-      const { text, log } = await decodeWithRotations(file);
-      debugEl.textContent = log.join('\n');
+      const text = await decodeWithRotations(file);
       onScanSuccess(text);
     }catch(err){
       feedbackEl.className = 'miss';
       feedbackEl.textContent = t.noCodeFound;
-      debugEl.textContent = (err && err.log ? err.log.join('\n') : String(err));
     }finally{
       scanToggle.disabled = false;
       scanToggle.textContent = t.captureBtn;
     }
+  });
+
+  // ---------- 숫자 직접 입력 (인식 실패 시 대체 수단) ----------
+  document.getElementById('manualAddBtn').addEventListener('click', () => {
+    const input = document.getElementById('manualInput');
+    const code = input.value.trim();
+    if(!code) return;
+    onScanSuccess(code);
+    input.value = '';
+  });
+  document.getElementById('manualInput').addEventListener('keydown', (e) => {
+    if(e.key === 'Enter') document.getElementById('manualAddBtn').click();
   });
 
   // ---------- 아이폰 사진의 회전(EXIF) 문제 대응: 여러 각도로 돌려가며 시도 ----------
@@ -581,37 +596,26 @@ window.addEventListener('error', function(e){
   }
 
   async function decodeWithRotations(file){
-    const log = [];
-    log.push('파일: ' + file.type + ', ' + Math.round(file.size/1024) + 'KB');
-
     const img = await loadImageEl(file);
-    log.push('이미지 크기: ' + img.naturalWidth + 'x' + img.naturalHeight);
 
     // 0) 가공 없이 원본 그대로 먼저 시도
     try{
-      const text = await fileScanner.scanFile(file, false);
-      log.push('원본 그대로 시도 → 성공');
-      return { text, log };
-    }catch(err){
-      log.push('원본 그대로 시도 → 실패: ' + err);
-    }
+      return await fileScanner.scanFile(file, false);
+    }catch(err){ /* 다음 시도로 넘어감 */ }
 
     // 1) 회전 + 리사이즈(고해상도 유지) 조합으로 재시도
     const angles = [0, 90, 180, 270];
+    let lastErr = null;
     for(const angle of angles){
       try{
         const attemptFile = await rotateAndResize(img, angle, 3200);
-        const text = await fileScanner.scanFile(attemptFile, false);
-        log.push(angle + '도 회전(3200px) 시도 → 성공');
-        return { text, log };
+        return await fileScanner.scanFile(attemptFile, false);
       }catch(err){
-        log.push(angle + '도 회전(3200px) 시도 → 실패: ' + err);
+        lastErr = err;
       }
     }
 
-    const finalErr = new Error('decode failed');
-    finalErr.log = log;
-    throw finalErr;
+    throw lastErr || new Error('decode failed');
   }
 
   function onScanSuccess(decodedText){
