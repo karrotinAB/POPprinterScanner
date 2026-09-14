@@ -25,6 +25,7 @@
     font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
     line-height:1.45;
     padding-bottom:84px;
+    overflow-x:hidden;
   }
   .stripes{
     height:10px;
@@ -294,7 +295,7 @@
     <div class="card">
       <button class="btn laser" id="scanToggle" disabled>데이터베이스 로딩 중...</button>
       <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
-      <div id="fileScanTarget" style="display:none;"></div>
+      <div id="fileScanTarget" style="position:absolute;left:-9999px;top:0;width:300px;height:300px;overflow:hidden;"></div>
       <div id="scanFeedback"></div>
 
       <table id="scanTable" style="display:none;">
@@ -531,7 +532,7 @@ window.addEventListener('error', function(e){
       onScanSuccess(decodedText);
     }catch(err){
       feedbackEl.className = 'miss';
-      feedbackEl.textContent = t.noCodeFound;
+      feedbackEl.textContent = t.noCodeFound + ' (' + err + ')';
     }finally{
       scanToggle.disabled = false;
       scanToggle.textContent = t.captureBtn;
