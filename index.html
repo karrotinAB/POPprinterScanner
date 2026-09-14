@@ -299,7 +299,7 @@
       <div id="scanFeedback"></div>
 
       <div id="manualRow" style="display:flex;gap:6px;margin-top:10px;">
-        <input type="text" id="manualInput" inputmode="numeric" placeholder="인식 안 되면 숫자 직접 입력" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:14px;font-family:ui-monospace,'SF Mono',Menlo,'Roboto Mono',monospace;">
+        <input type="text" id="manualInput" inputmode="numeric" placeholder="바코드 또는 제품코드 직접 입력" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:14px;font-family:ui-monospace,'SF Mono',Menlo,'Roboto Mono',monospace;">
         <button class="btn outline small" id="manualAddBtn" style="width:auto;">추가</button>
       </div>
 
@@ -622,20 +622,32 @@ window.addEventListener('error', function(e){
     addScan(decodedText);
   }
 
+  function findRecord(code){
+    if(db.records[code]) return db.records[code];
+    if(db.productCodeKey){
+      for(const key in db.records){
+        const r = db.records[key];
+        if(String(r[db.productCodeKey]).trim() === code) return r;
+      }
+    }
+    return null;
+  }
+
   function addScan(code){
-    const record = db.records[code] || null;
-    const existing = scanList.find(item => item.barcode === code);
+    const record = findRecord(code);
+    const resolvedCode = record ? record[db.barcodeKey] : code;
+    const existing = scanList.find(item => item.barcode === resolvedCode);
     if(existing){
       existing.qty += 1;
     }else{
-      scanList.push({ barcode: code, record, qty: 1 });
+      scanList.push({ barcode: resolvedCode, record, qty: 1 });
     }
 
     const t = I18N[currentLang];
     const nameKey = pickNameKey(db.nameCandidates, currentLang);
     feedbackEl.className = record ? 'ok' : 'miss';
     feedbackEl.textContent = record
-      ? `${t.matched}: ${nameKey ? record[nameKey] : code}`
+      ? `${t.matched}: ${nameKey ? record[nameKey] : resolvedCode}`
       : `${t.unmatched}: ${code}`;
 
     renderScanList();
