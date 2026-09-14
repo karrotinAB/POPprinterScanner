@@ -297,6 +297,7 @@
       <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
       <div id="fileScanTarget" style="position:absolute;left:-9999px;top:0;width:300px;height:300px;overflow:hidden;"></div>
       <div id="scanFeedback"></div>
+      <div id="debugInfo" style="display:none;margin-top:8px;padding:10px 12px;background:#F0EFEA;border-radius:8px;font-size:11.5px;font-family:ui-monospace,'SF Mono',Menlo,'Roboto Mono',monospace;white-space:pre-wrap;word-break:break-all;color:var(--muted);"></div>
 
       <table id="scanTable" style="display:none;">
         <thead>
@@ -513,6 +514,9 @@ window.addEventListener('error', function(e){
     const t = I18N[currentLang];
     scanToggle.disabled = true;
     scanToggle.textContent = t.capturing;
+    const debugEl = document.getElementById('debugInfo');
+    debugEl.style.display = 'block';
+    debugEl.textContent = '파일: ' + file.type + ', ' + Math.round(file.size/1024) + 'KB\n분석 중...';
 
     try{
       if(!fileScanner){
@@ -528,11 +532,13 @@ window.addEventListener('error', function(e){
           ]
         });
       }
-      const decodedText = await decodeWithRotations(file);
-      onScanSuccess(decodedText);
+      const { text, log } = await decodeWithRotations(file);
+      debugEl.textContent = log.join('\n');
+      onScanSuccess(text);
     }catch(err){
       feedbackEl.className = 'miss';
-      feedbackEl.textContent = t.noCodeFound + ' (' + err + ')';
+      feedbackEl.textContent = t.noCodeFound;
+      debugEl.textContent = (err && err.log ? err.log.join('\n') : String(err));
     }finally{
       scanToggle.disabled = false;
       scanToggle.textContent = t.captureBtn;
@@ -570,24 +576,42 @@ window.addEventListener('error', function(e){
       ctx.drawImage(img, -w / 2, -h / 2, w, h);
       canvas.toBlob(blob => {
         resolve(new File([blob], 'attempt.jpg', { type: 'image/jpeg' }));
-      }, 'image/jpeg', 0.92);
+      }, 'image/jpeg', 0.95);
     });
   }
 
   async function decodeWithRotations(file){
+    const log = [];
+    log.push('파일: ' + file.type + ', ' + Math.round(file.size/1024) + 'KB');
+
     const img = await loadImageEl(file);
+    log.push('이미지 크기: ' + img.naturalWidth + 'x' + img.naturalHeight);
+
+    // 0) 가공 없이 원본 그대로 먼저 시도
+    try{
+      const text = await fileScanner.scanFile(file, false);
+      log.push('원본 그대로 시도 → 성공');
+      return { text, log };
+    }catch(err){
+      log.push('원본 그대로 시도 → 실패: ' + err);
+    }
+
+    // 1) 회전 + 리사이즈(고해상도 유지) 조합으로 재시도
     const angles = [0, 90, 180, 270];
-    let lastErr = null;
     for(const angle of angles){
       try{
-        const attemptFile = await rotateAndResize(img, angle, 1600);
+        const attemptFile = await rotateAndResize(img, angle, 3200);
         const text = await fileScanner.scanFile(attemptFile, false);
-        return text;
+        log.push(angle + '도 회전(3200px) 시도 → 성공');
+        return { text, log };
       }catch(err){
-        lastErr = err;
+        log.push(angle + '도 회전(3200px) 시도 → 실패: ' + err);
       }
     }
-    throw lastErr || new Error('decode failed');
+
+    const finalErr = new Error('decode failed');
+    finalErr.log = log;
+    throw finalErr;
   }
 
   function onScanSuccess(decodedText){
