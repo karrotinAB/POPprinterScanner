@@ -622,12 +622,21 @@ window.addEventListener('error', function(e){
     addScan(decodedText);
   }
 
+  function normalizeCode(s){
+    // 앞자리 0 차이는 무시하고 비교 (예: "1234567" == "01234567")
+    return String(s == null ? '' : s).trim().replace(/^0+(?=\d)/, '');
+  }
+
   function findRecord(code){
     if(db.records[code]) return db.records[code];
+    const norm = normalizeCode(code);
+    for(const key in db.records){
+      if(normalizeCode(key) === norm) return db.records[key];
+    }
     if(db.productCodeKey){
       for(const key in db.records){
         const r = db.records[key];
-        if(String(r[db.productCodeKey]).trim() === code) return r;
+        if(normalizeCode(r[db.productCodeKey]) === norm) return r;
       }
     }
     return null;
